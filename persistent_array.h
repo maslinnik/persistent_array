@@ -68,6 +68,7 @@ class persistent_array {
     using pointer = value_type*;
     using reference = value_type&;
 
+    BaseIterator() = default;
     BaseIterator(const BaseIterator&) = default;
     BaseIterator& operator=(const BaseIterator&) = default;
 
@@ -79,8 +80,10 @@ class persistent_array {
       return &static_cast<DataNode*>(stack.back())->x;
     }
 
-    BaseIterator& operator+=(difference_type distance) {
-      difference_type k = distance;
+    reference operator[](difference_type n) const { return *operator+(n); }
+
+    BaseIterator& operator+=(difference_type n) {
+      difference_type k = n;
       if (!stack.back()) {
         stack.pop_back();
         k += N;
@@ -100,19 +103,17 @@ class persistent_array {
       return *this;
     }
 
-    BaseIterator& operator-=(difference_type distance) {
-      return operator+=(-distance);
-    }
+    BaseIterator& operator-=(difference_type n) { return operator+=(-n); }
 
-    BaseIterator operator+(difference_type i) const {
+    BaseIterator operator+(difference_type n) const {
       BaseIterator result = *this;
-      result += i;
+      result += n;
       return result;
     }
 
-    BaseIterator operator-(difference_type i) const {
+    BaseIterator operator-(difference_type n) const {
       BaseIterator result = *this;
-      result -= i;
+      result -= n;
       return result;
     }
 
@@ -132,22 +133,33 @@ class persistent_array {
       return copy;
     }
 
-    std::strong_ordering operator<=> (const BaseIterator& other) const {
-      if (stack.back() == other.stack.back()) {
-        return std::strong_ordering::equal;
+    difference_type operator-(const BaseIterator& other) const {
+      size_t lca_depth = std::min(stack.size(), other.stack.size()) - 1;
+      while (stack[lca_depth] != other.stack[lca_depth]) {
+        --lca_depth;
       }
-      size_t depth = std::min(stack.size(), other.stack.size()) - 1;
-      while (stack[depth] != other.stack[depth]) {
-        --depth;
-      }
-      return static_cast<IntermediateNode*>(stack[depth])->left.get() ==
-                     stack[depth + 1]
-                 ? std::strong_ordering::less
-                 : std::strong_ordering::greater;
+      auto lca_index = [&](const StackType& stack) {
+        size_t result = 0;
+        for (size_t i = lca_depth; i + 1 < stack.size(); ++i) {
+          auto intermediate_node = static_cast<IntermediateNode*>(stack[i]);
+          if (intermediate_node->right.get() == stack[i + 1]) {
+            result += intermediate_node->left->size;
+          }
+        }
+      };
+      return lca_index(stack) - lca_index(other.stack);
+    }
+
+    std::strong_ordering operator<=>(const BaseIterator& other) const {
+      return operator-(other) <=> 0;
     }
 
     bool operator==(const BaseIterator& other) const {
       return stack.back() == other.stack.back();
+    }
+
+    friend BaseIterator operator+(difference_type i, const BaseIterator& iter) {
+      return iter + i;
     }
 
     operator BaseIterator<true>() { return BaseIterator<true>(stack); }
@@ -237,7 +249,9 @@ class persistent_array {
     return std::reverse_iterator(cbegin());
   }
 
-  std::array<T, N> as_array() const requires(std::is_copy_constructible_v<T>) {
+  std::array<T, N> as_array() const
+    requires(std::is_copy_constructible_v<T>)
+  {
     alignas(alignof(T)) std::byte buffer[sizeof(T) * N];
     T* ptr = reinterpret_cast<T*>(buffer);
     for (const T& x : *this) {
@@ -275,3 +289,13 @@ class persistent_array {
 
   const T& operator[](size_t i) const { return *(begin() + i); }
 };
+
+//template <typename T, size_t N>
+//persistent_array<T, N>::iterator operator+(typename persistent_array<T, N>::iterator::difference_type i, const typename persistent_array<T, N>::iterator& iter) {
+//  return iter + i;
+//}
+//
+//template <typename T, size_t N>
+//persistent_array<T, N>::const_iterator operator+(typename persistent_array<T, N>::const_iterator::difference_type i, const typename persistent_array<T, N>::const_iterator& iter) {
+//  return iter + i;
+//}
