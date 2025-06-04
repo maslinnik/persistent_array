@@ -47,6 +47,42 @@ TEST(TestUpdate, Unchanged) {
   }
 }
 
+TEST(TestIterators, TestAddition) {
+  const int N = 10;
+
+  std::array<int, N> a{};
+  std::iota(a.begin(), a.end(), 0);
+  persistent_array<int, N> pa{a.begin()};
+
+  ASSERT_EQ(pa.begin() + N, pa.end());
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ(*(pa.begin() + i), i);
+    ASSERT_EQ(*(pa.end() - (N - i)), i);
+    for (int j = -i; i + j < N; ++j) {
+      ASSERT_EQ((pa.begin() + i) + j, pa.begin() + (i + j));
+    }
+  }
+}
+
+TEST(TestIterators, TestDifference) {
+  const int N = 10;
+
+  std::array<int, N> a{};
+  std::iota(a.begin(), a.end(), 0);
+  persistent_array<int, N> pa{a.begin()};
+
+  ASSERT_EQ(pa.end() - pa.begin(), N);
+
+  for (int i = 0; i < N; ++i) {
+    ASSERT_EQ((pa.begin() + i) - pa.begin(), i);
+    ASSERT_EQ(pa.end() - (pa.begin() + i), N - i);
+    for (int j = 0; j < N; ++j) {
+      ASSERT_EQ((pa.begin() + i) - (pa.begin() + j), i - j);
+    }
+  }
+}
+
 TEST(TestRequirements, RandomAccessIterator) {
   static_assert(std::random_access_iterator<
                 typename persistent_array<int, 8>::iterator>);

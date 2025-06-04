@@ -198,6 +198,9 @@ struct MySharedPtr {
         --lca_depth;
       }
       auto lca_index = [&](const StackType& stack) {
+        if (!stack.back()) {
+          return N;
+        }
         size_t result = 0;
         for (size_t i = lca_depth; i + 1 < stack.size(); ++i) {
           auto intermediate_node = static_cast<IntermediateNode*>(stack[i]);
@@ -205,6 +208,7 @@ struct MySharedPtr {
             result += intermediate_node->left->size;
           }
         }
+        return result;
       };
       return lca_index(stack) - lca_index(other.stack);
     }
