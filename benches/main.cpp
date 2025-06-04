@@ -2,9 +2,10 @@
 #include <random>
 #include "persistent_array.h"
 #include "versions/my_shared_ptr.h"
+#include "versions/four_fold.h"
 
 template <typename T, size_t N, template <typename, size_t> typename Base>
-static void RandomUpdates(benchmark::State& state) {
+static void StoredRandomUpdates(benchmark::State& state) {
   using pa_t = persistent_array<T, N, Base<T, N>>;
 
   std::mt19937 rnd{};
@@ -23,8 +24,28 @@ static void RandomUpdates(benchmark::State& state) {
   }
 }
 
-BENCHMARK(RandomUpdates<int, 1000, base::Initial>);
-BENCHMARK(RandomUpdates<int, 1000, base::MySharedPtr>);
+BENCHMARK(StoredRandomUpdates<int, 1000, base::Initial>);
+BENCHMARK(StoredRandomUpdates<int, 1000, base::MySharedPtr>);
+BENCHMARK(StoredRandomUpdates<int, 1000, base::FourFold>);
+
+template <typename T, size_t N, template <typename, size_t> typename Base>
+static void CumulativeRandomUpdates(benchmark::State& state) {
+  using pa_t = persistent_array<T, N, Base<T, N>>;
+
+  std::mt19937 rnd{};
+  pa_t pa{0};
+
+  for (auto _ : state) {
+    int position = rnd() % N;
+    int new_val = rnd();
+
+    pa = pa.update(position, new_val);
+  }
+}
+
+BENCHMARK(CumulativeRandomUpdates<int, 1000, base::Initial>);
+BENCHMARK(CumulativeRandomUpdates<int, 1000, base::MySharedPtr>);
+BENCHMARK(CumulativeRandomUpdates<int, 1000, base::FourFold>);
 
 template <typename T, size_t N, template <typename, size_t> typename Base>
 static void Traversal(benchmark::State& state) {
@@ -39,12 +60,16 @@ static void Traversal(benchmark::State& state) {
   }
 
   for (auto _ : state) {
-    for (int x : pa) {}
+    auto it = pa.begin();
+    for (int i = 0; i < N; ++i) {
+      ++it;
+    }
   }
 }
 
 BENCHMARK(Traversal<int, 1000, base::Initial>);
 BENCHMARK(Traversal<int, 1000, base::MySharedPtr>);
+BENCHMARK(Traversal<int, 1000, base::FourFold>);
 
 template <typename T, size_t N, template <typename, size_t> typename Base>
 static void Indexing(benchmark::State& state) {
@@ -66,5 +91,6 @@ static void Indexing(benchmark::State& state) {
 
 BENCHMARK(Indexing<int, 1000, base::Initial>);
 BENCHMARK(Indexing<int, 1000, base::MySharedPtr>);
+BENCHMARK(Indexing<int, 1000, base::FourFold>);
 
 BENCHMARK_MAIN();
