@@ -1,49 +1,70 @@
 #include <benchmark/benchmark.h>
-#include "persistent_array.h"
 #include <random>
+#include "persistent_array.h"
+#include "versions/my_shared_ptr.h"
 
-template <typename T, size_t N>
-struct SlowPersistentArray {
-    std::array<T, N> array;
+template <typename T, size_t N, template <typename, size_t> typename Base>
+static void RandomUpdates(benchmark::State& state) {
+  using pa_t = persistent_array<T, N, Base<T, N>>;
 
-    const T& operator[](size_t i) const { return array[i]; }
+  std::mt19937 rnd{};
+  std::vector<pa_t> v = {pa_t{0}};
 
-    template <typename... Args>
-    SlowPersistentArray update(size_t index, Args&&... args) const {
-        auto new_array = array;
-        new_array[index] = T{std::forward<Args>(args)...};
-        return SlowPersistentArray{new_array};
-    }
-};
+  for (auto _ : state) {
+    int index = rnd() % v.size();
+    int position = rnd() % N;
+    int new_val = rnd();
 
-const int N = 1'000;
+    auto new_version = v[index].update(position, new_val);
 
-static void SlowRandomUpdates(benchmark::State& state) {
-    std::mt19937 rnd{};
-    std::array<int, N> initial{};
-    std::vector<SlowPersistentArray<int, N>> v = {{initial}};
-
-    for (auto _ : state) {
-        int index = rnd() % v.size();
-        int position = rnd() % N;
-        int new_val = rnd();
-        v.push_back(v[index].update(position, new_val));
-    }
+    state.PauseTiming();
+    v.push_back(new_version);
+    state.ResumeTiming();
+  }
 }
-BENCHMARK(SlowRandomUpdates);
 
-static void FastRandomUpdates(benchmark::State& state) {
-    std::mt19937 rnd{};
-    std::array<int, N> initial{};
-    std::vector<persistent_array<int, N>> v = {persistent_array<int, N>{initial.begin()}};
+BENCHMARK(RandomUpdates<int, 1000, base::Initial>);
+BENCHMARK(RandomUpdates<int, 1000, base::MySharedPtr>);
 
-    for (auto _ : state) {
-        int index = rnd() % v.size();
-        int position = rnd() % N;
-        int new_val = rnd();
-        v.push_back(v[index].update(position, new_val));
-    }
+template <typename T, size_t N, template <typename, size_t> typename Base>
+static void Traversal(benchmark::State& state) {
+  using pa_t = persistent_array<T, N, Base<T, N>>;
+
+  std::mt19937 rnd{};
+  pa_t pa{0};
+  for (int i = 0; i < 2 * N; ++i) {
+    int position = rnd() % N;
+    int new_val = rnd();
+    pa = pa.update(position, new_val);
+  }
+
+  for (auto _ : state) {
+    for (int x : pa) {}
+  }
 }
-BENCHMARK(FastRandomUpdates);
+
+BENCHMARK(Traversal<int, 1000, base::Initial>);
+BENCHMARK(Traversal<int, 1000, base::MySharedPtr>);
+
+template <typename T, size_t N, template <typename, size_t> typename Base>
+static void Indexing(benchmark::State& state) {
+  using pa_t = persistent_array<T, N, Base<T, N>>;
+
+  std::mt19937 rnd{};
+  pa_t pa{0};
+  for (int i = 0; i < 2 * N; ++i) {
+    int position = rnd() % N;
+    int new_val = rnd();
+    pa = pa.update(position, new_val);
+  }
+
+  for (auto _ : state) {
+    int position = rnd() % N;
+    pa[position];
+  }
+}
+
+BENCHMARK(Indexing<int, 1000, base::Initial>);
+BENCHMARK(Indexing<int, 1000, base::MySharedPtr>);
 
 BENCHMARK_MAIN();

@@ -2,10 +2,8 @@
 #include <numeric>
 #include "versions/initial_base.h"
 
-template <typename T, size_t N>
+template <typename T, size_t N, typename Base = base::Initial<T, N>>
 class persistent_array {
-  using Base = detail::PersistentArrayBase<T, N>;
-
   Base base;
 
   explicit persistent_array(Base base) : base(std::move(base)) {}

@@ -1,4 +1,3 @@
-#include <memory>
 #include <numeric>
 
 #include "../inplace_vector"
@@ -6,19 +5,18 @@
 namespace base {
 
 template <typename T, size_t N>
-struct Initial {
-  struct IntermediateNode;
-  struct DataNode;
-
+struct MySharedPtr {
   struct BaseNode {
     size_t size;
+    size_t ref_count = 1;
   };
 
-  struct IntermediateNode : BaseNode {
-    std::shared_ptr<BaseNode> left, right;
+  class Rc;
 
-    IntermediateNode(std::shared_ptr<BaseNode> left,
-                     std::shared_ptr<BaseNode> right)
+  struct IntermediateNode : BaseNode {
+    Rc left, right;
+
+    IntermediateNode(Rc left, Rc right)
         : BaseNode(left->size + right->size),
           left(std::move(left)),
           right(std::move(right)) {}
@@ -31,7 +29,65 @@ struct Initial {
     DataNode(Args&&... args) : BaseNode(1), x(std::forward<Args>(args)...) {}
   };
 
-  std::shared_ptr<BaseNode> root;
+  class Rc {
+   private:
+    BaseNode* ptr = nullptr;
+
+    Rc(BaseNode* raw) : ptr(raw) {}
+
+   public:
+    Rc(const Rc& rc) : ptr(rc.ptr) {
+      if (!ptr) {
+        return;
+      }
+      ptr->ref_count += 1;
+    }
+
+    Rc(Rc&& rc) noexcept : ptr(rc.ptr) { rc.ptr = nullptr; }
+
+    void swap(Rc& rc) { std::swap(ptr, rc.ptr); }
+
+    Rc& operator=(const Rc& rc) {
+      Rc{rc}.swap(*this);
+      return *this;
+    }
+
+    Rc& operator=(Rc&& rc) noexcept {
+      Rc{std::move(rc)}.swap(*this);
+      return *this;
+    }
+
+    ~Rc() {
+      if (!ptr) {
+        return;
+      }
+      ptr->ref_count -= 1;
+      if (ptr->ref_count == 0) {
+        if (ptr->size == 1) {
+          delete static_cast<DataNode*>(ptr);
+        } else {
+          delete static_cast<IntermediateNode*>(ptr);
+        }
+      }
+    }
+
+    BaseNode* operator->() const { return ptr; }
+
+    BaseNode& operator*() const { return *ptr; }
+
+    BaseNode* get() const { return ptr; }
+
+    template <typename... Args>
+    static Rc make_base(Args&&... args) {
+      return {new DataNode(std::forward<Args>(args)...)};
+    }
+
+    static Rc make_intermediate(Rc left, Rc right) {
+      return {new IntermediateNode(std::move(left), std::move(right))};
+    }
+  };
+
+  Rc root;
 
   template <bool IsConst>
   class BaseIterator {
@@ -40,7 +96,7 @@ struct Initial {
 
     StackType stack;
 
-    friend class Initial;
+    friend struct MySharedPtr;
 
     void go_to_kth(size_t k) {
       while (stack.back()->size > 1) {
@@ -168,7 +224,7 @@ struct Initial {
     explicit operator BaseIterator<true>() { return BaseIterator<true>(stack); }
   };
 
-  explicit Initial(std::shared_ptr<BaseNode> root) : root(std::move(root)) {}
+  explicit MySharedPtr(Rc root) : root(std::move(root)) {}
 
   BaseIterator<true> begin() const { return {root.get(), 0}; }
 
@@ -179,67 +235,62 @@ struct Initial {
   BaseIterator<false> mutable_end() { return {root.get(), N}; }
 
   template <std::input_iterator Iter>
-  static std::shared_ptr<BaseNode> build_from_iter(size_t l, size_t r,
-                                                   Iter& iter) {
+  static Rc build_from_iter(size_t l, size_t r, Iter& iter) {
     if (l + 1 == r) {
-      return std::make_shared<DataNode>(*iter++);
+      return Rc::make_base(*iter++);
     } else {
       size_t m = std::midpoint(l, r);
       auto left = build_from_iter(l, m, iter);
       auto right = build_from_iter(m, r, iter);
-      return std::make_shared<IntermediateNode>(std::move(left),
-                                                std::move(right));
+      return Rc::make_intermediate(std::move(left), std::move(right));
     }
   }
 
-  static std::shared_ptr<BaseNode> build_filled(size_t l, size_t r,
-                                                const T& fill) {
+  static Rc build_filled(size_t l, size_t r, const T& fill) {
     if (l + 1 == r) {
-      return std::make_shared<DataNode>(fill);
+      return Rc::make_base(fill);
     } else {
       size_t m = std::midpoint(l, r);
       auto left = build_from_iterator(l, m, fill);
       auto right = build_from_iterator(m, r, fill);
-      return std::make_shared<IntermediateNode>(std::move(left),
-                                                std::move(right));
+      return Rc::make_intermediate(std::move(left), std::move(right));
     }
   }
 
   template <typename... Args>
-  std::shared_ptr<BaseNode> updated_node(BaseNode* curr, size_t i,
-                                         Args&&... args) const {
+  Rc updated_node(BaseNode* curr, size_t i, Args&&... args) const {
     if (curr->size == 1) {
-      return std::make_shared<DataNode>(std::forward<Args>(args)...);
+      return Rc::make_base(std::forward<Args>(args)...);
     }
     auto intermediate_node = static_cast<IntermediateNode*>(curr);
     if (i < intermediate_node->left->size) {
       auto new_left = updated_node(intermediate_node->left.get(), i,
                                    std::forward<Args>(args)...);
-      return std::make_shared<IntermediateNode>(std::move(new_left),
-                                                intermediate_node->right);
+      return Rc::make_intermediate(std::move(new_left),
+                                   intermediate_node->right);
     } else {
       auto new_right = updated_node(intermediate_node->right.get(),
                                     i - intermediate_node->left->size,
                                     std::forward<Args>(args)...);
-      return std::make_shared<IntermediateNode>(intermediate_node->left,
-                                                std::move(new_right));
+      return Rc::make_intermediate(intermediate_node->left,
+                                   std::move(new_right));
     }
   }
 
-  static Initial filled(const T& fill) {
-    return Initial{build_filled(0, N, fill)};
+  static MySharedPtr filled(const T& fill) {
+    return MySharedPtr{std::move(build_filled(0, N, fill))};
   }
 
   template <std::input_iterator Iter>
-  static Initial from_iter(Iter first) {
-    return Initial{build_from_iter(0, N, first)};
+  static MySharedPtr from_iter(Iter first) {
+    return MySharedPtr{std::move(build_from_iter(0, N, first))};
   }
 
   template <typename... Args>
-  Initial update(size_t index, Args&&... args) const {
+  MySharedPtr update(size_t index, Args&&... args) const {
     auto new_root =
         updated_node(root.get(), index, std::forward<Args>(args)...);
-    return Initial{std::move(new_root)};
+    return MySharedPtr{std::move(new_root)};
   }
 };
 
