@@ -4,8 +4,10 @@
 
 namespace base {
 
-template <typename T, size_t N>
-struct FourFold {
+template <typename T, size_t N, int B>
+struct KFold {
+  static const int K = 1 << B;
+
   struct BaseNode {
     size_t size;
     size_t ref_count = 1;
@@ -14,11 +16,10 @@ struct FourFold {
   class Rc;
 
   struct IntermediateNode : BaseNode {
-    std::array<Rc, 4> children;
+    std::array<Rc, K> children;
 
-    IntermediateNode(size_t size, std::array<Rc, 4> c)
-        : BaseNode(size),
-          children(std::move(c)) {}
+    IntermediateNode(size_t size, std::array<Rc, K> c)
+        : BaseNode(size), children(std::move(c)) {}
   };
 
   struct DataNode : BaseNode {
@@ -81,7 +82,7 @@ struct FourFold {
       return {new DataNode(std::forward<Args>(args)...)};
     }
 
-    static Rc make_intermediate(size_t size, std::array<Rc, 4> c) {
+    static Rc make_intermediate(size_t size, std::array<Rc, K> c) {
       return {new IntermediateNode(size, std::move(c))};
     }
 
@@ -90,29 +91,26 @@ struct FourFold {
 
   Rc root;
 
-  static size_t which(size_t i, size_t n) {
-    return i / ((n + 3) / 4);
-  }
+  static size_t child_size(size_t n) { return (n + K - 1) / K; }
 
-  static size_t child_size(size_t n) {
-    return (n + 3) / 4;
-  }
+  static size_t which(size_t i, size_t n) { return i / child_size(n); }
 
   template <bool IsConst>
   class BaseIterator {
-    static const size_t STACK_SIZE = N == 1 ? 2 : (std::bit_width(N - 1) + 3) / 2;
+    static const size_t STACK_SIZE =
+        N == 1 ? 2 : (std::bit_width(N - 1) + 2 * B - 1) / B;
     using StackType = std::inplace_vector<BaseNode*, STACK_SIZE>;
 
     StackType stack;
     uint64_t mask = 0;
 
-    friend struct FourFold;
+    friend struct KFold;
 
     void go_to_kth(size_t k) {
       while (stack.back()->size > 1) {
         auto intermediate_node = static_cast<IntermediateNode*>(stack.back());
         size_t index = which(k, stack.back()->size);
-        mask |= index << (2 * stack.size() - 2);
+        mask |= index << ((stack.size() - 1) * B);
         k -= child_size(stack.back()->size) * index;
         stack.push_back(intermediate_node->children[index].get());
       }
@@ -157,10 +155,10 @@ struct FourFold {
       }
       while (stack.size() > 1 && !(0 <= k && k < stack.back()->size)) {
         auto parent = static_cast<IntermediateNode*>(stack[stack.size() - 2]);
-        size_t index = mask >> (2 * stack.size() - 4) & 3;
+        size_t index = mask >> ((stack.size() - 2) * B) & (K - 1);
         k += child_size(parent->size) * index;
         stack.pop_back();
-        mask &= ~(3 << (2 * stack.size() - 2));
+        mask &= ~((K - 1) << ((stack.size() - 1) * B));
       }
       if (0 <= k && k < stack.back()->size) {
         go_to_kth(k);
@@ -212,7 +210,7 @@ struct FourFold {
         size_t result = 0;
         for (size_t i = lca_depth; i + 1 < stack.size(); ++i) {
           auto intermediate_node = static_cast<IntermediateNode*>(stack[i]);
-          size_t index = mask >> (2 * i) & 3;
+          size_t index = mask >> (B * i) & (K - 1);
           result += child_size(intermediate_node->size) * index;
         }
         return result;
@@ -235,7 +233,7 @@ struct FourFold {
     explicit operator BaseIterator<true>() { return BaseIterator<true>(stack); }
   };
 
-  explicit FourFold(Rc root) : root(std::move(root)) {}
+  explicit KFold(Rc root) : root(std::move(root)) {}
 
   BaseIterator<true> begin() const { return {root.get(), 0}; }
 
@@ -253,9 +251,11 @@ struct FourFold {
       return Rc::make_base(*iter++);
     } else {
       size_t size = r - l;
-      std::array<Rc, 4> children{};
-      for (int i = 0; i < 4; ++i) {
-        children[i] = build_from_iter(std::min(r, l + child_size(size) * i), std::min(r, l + child_size(size) * (i + 1)), iter);
+      std::array<Rc, K> children{};
+      for (int i = 0; i < K; ++i) {
+        children[i] =
+            build_from_iter(std::min(r, l + child_size(size) * i),
+                            std::min(r, l + child_size(size) * (i + 1)), iter);
       }
       return Rc::make_intermediate(size, std::move(children));
     }
@@ -266,9 +266,11 @@ struct FourFold {
       return Rc::make_base(fill);
     } else {
       size_t size = r - l;
-      std::array<Rc, 4> children{};
-      for (int i = 0; i < 4; ++i) {
-        children[i] = build_from_iter(std::min(r, l + child_size(size) * i), std::min(r, l + child_size(size) * (i + 1)), fill);
+      std::array<Rc, K> children{};
+      for (int i = 0; i < K; ++i) {
+        children[i] =
+            build_from_iter(std::min(r, l + child_size(size) * i),
+                            std::min(r, l + child_size(size) * (i + 1)), fill);
       }
       return Rc::make_intermediate(size, std::move(children));
     }
@@ -280,28 +282,35 @@ struct FourFold {
       return Rc::make_base(std::forward<Args>(args)...);
     }
     auto intermediate_node = static_cast<IntermediateNode*>(curr);
-    std::array<Rc, 4> new_children{intermediate_node->children};
+    std::array<Rc, K> new_children{intermediate_node->children};
     size_t index = which(i, curr->size);
     i -= child_size(curr->size) * index;
-    new_children[index] = updated_node(new_children[index].get(), i, std::forward<Args>(args)...);
+    new_children[index] =
+        updated_node(new_children[index].get(), i, std::forward<Args>(args)...);
     return Rc::make_intermediate(curr->size, std::move(new_children));
   }
 
-  static FourFold filled(const T& fill) {
-    return FourFold{std::move(build_filled(0, N, fill))};
+  static KFold filled(const T& fill) {
+    return KFold{std::move(build_filled(0, N, fill))};
   }
 
   template <std::input_iterator Iter>
-  static FourFold from_iter(Iter first) {
-    return FourFold{std::move(build_from_iter(0, N, first))};
+  static KFold from_iter(Iter first) {
+    return KFold{std::move(build_from_iter(0, N, first))};
   }
 
   template <typename... Args>
-  FourFold update(size_t index, Args&&... args) const {
+  KFold update(size_t index, Args&&... args) const {
     auto new_root =
         updated_node(root.get(), index, std::forward<Args>(args)...);
-    return FourFold{std::move(new_root)};
+    return KFold{std::move(new_root)};
   }
 };
+
+template <typename T, size_t N>
+using FourFold = KFold<T, N, 2>;
+
+template <typename T, size_t N>
+using EightFold = KFold<T, N, 3>;
 
 }  // namespace base

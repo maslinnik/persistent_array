@@ -61,3 +61,29 @@ TEST(TestStress, MultipleElements) {
     }
   }
 }
+
+TEST(TestStress, ManyElements) {
+  const int ITERATIONS = 1'000;
+  const int N = 1'000;
+
+  std::mt19937 rnd{};
+
+  std::array<int, N> initial{};
+  std::vector<persistent_array<int, N>> fast = {
+      persistent_array<int, N>{initial.begin()}};
+  std::vector<SlowPersistentArray<int, N>> slow = {{initial}};
+
+  for (int i = 0; i < ITERATIONS; ++i) {
+    int index = rnd() % (i + 1);
+    int position = rnd() % N;
+    int new_val = rnd();
+    fast.push_back(fast[index].update(position, new_val));
+    slow.push_back(slow[index].update(position, new_val));
+  }
+
+  for (int i = 0; i < ITERATIONS + 1; ++i) {
+    for (int j = 0; j < N; ++j) {
+      ASSERT_EQ(fast[i][j], slow[i][j]);
+    }
+  }
+}
