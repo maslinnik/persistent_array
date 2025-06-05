@@ -2,7 +2,7 @@
 #include <numeric>
 #include "versions/initial_base.h"
 
-template <typename T, size_t N, typename Base = base::Initial<T, N>>
+template <typename T, typename Base = base::Initial<T>>
 class persistent_array {
   Base base;
 
@@ -30,35 +30,21 @@ class persistent_array {
 
   const_reverse_iterator crend() const { return rend(); }
 
-  std::array<T, N> as_array() const {
-    alignas(alignof(T)) std::byte buffer[sizeof(T) * N];
-    T* ptr = reinterpret_cast<T*>(buffer);
-    for (const T& x : *this) {
-      new (ptr++) T(x);
-    }
-    return std::to_array(std::move(reinterpret_cast<T(&)[N]>(buffer)));
-  }
+  size_t size() const { return base.size(); }
 
-  /*
-  std::array<T, N> to_array() {
-    alignas(alignof(T)) std::byte buffer[sizeof(T) * N];
-    T* ptr = reinterpret_cast<T*>(buffer);
-    for (T& x : *this) {
-      new (ptr++) T(std::move(x));
-    }
-    return std::to_array(std::move(reinterpret_cast<T(&)[N]>(buffer)));
-  }
-   */
+  size_t max_size() const { return Base::MAX_SIZE; }
 
-  explicit persistent_array() : base(Base::filled(T{})) {}
+  explicit persistent_array(size_t count) : base(Base::filled(count, T{})) {}
 
-  explicit persistent_array(const T& fill) : base(Base::filled(fill)) {}
+  explicit persistent_array(size_t count, const T& fill)
+      : base(Base::filled(count, fill)) {}
 
   persistent_array(std::initializer_list<T> il)
-      : base(Base::from_iter(il.begin())) {}
+      : base(Base::from_iter(il.begin(), il.end())) {}
 
-  template <std::input_iterator Iter>
-  explicit persistent_array(Iter first) : base(Base::from_iter(first)) {}
+  template <std::forward_iterator Iter>
+  explicit persistent_array(Iter first, Iter last)
+      : base(Base::from_iter(first, last)) {}
 
   template <typename... Args>
   persistent_array update(size_t index, Args&&... args) const {

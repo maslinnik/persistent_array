@@ -4,7 +4,7 @@
 
 namespace base {
 
-template <typename T, size_t N>
+template <typename T>
 struct MySharedPtr {
   struct BaseNode {
     size_t size;
@@ -89,9 +89,13 @@ struct MySharedPtr {
 
   Rc root;
 
+  size_t size() const { return root->size; }
+
+  static constexpr size_t MAX_SIZE = UINT32_MAX;
+
   template <bool IsConst>
   class BaseIterator {
-    static const size_t STACK_SIZE = N == 1 ? 2 : std::bit_width(N - 1) + 1;
+    static const size_t STACK_SIZE = std::bit_width(MAX_SIZE) + 1;
     using StackType = std::inplace_vector<BaseNode*, STACK_SIZE>;
 
     StackType stack;
@@ -111,7 +115,7 @@ struct MySharedPtr {
     }
 
     BaseIterator(BaseNode* root, size_t index) : stack({root}) {
-      if (index < N) {
+      if (index < root->size) {
         go_to_kth(index);
       } else {
         stack.push_back(nullptr);
@@ -145,7 +149,7 @@ struct MySharedPtr {
       difference_type k = n;
       if (!stack.back()) {
         stack.pop_back();
-        k += N;
+        k += stack.back()->size;
       }
       while (stack.size() > 1 && !(0 <= k && k < stack.back()->size)) {
         auto parent = static_cast<IntermediateNode*>(stack[stack.size() - 2]);
@@ -199,7 +203,7 @@ struct MySharedPtr {
       }
       auto lca_index = [&](const StackType& stack) {
         if (!stack.back()) {
-          return N;
+          return stack[0]->size;
         }
         size_t result = 0;
         for (size_t i = lca_depth; i + 1 < stack.size(); ++i) {
@@ -232,11 +236,11 @@ struct MySharedPtr {
 
   BaseIterator<true> begin() const { return {root.get(), 0}; }
 
-  BaseIterator<true> end() const { return {root.get(), N}; }
+  BaseIterator<true> end() const { return {root.get(), size()}; }
 
   BaseIterator<false> mutable_begin() { return {root.get(), 0}; }
 
-  BaseIterator<false> mutable_end() { return {root.get(), N}; }
+  BaseIterator<false> mutable_end() { return {root.get(), size()}; }
 
   template <std::input_iterator Iter>
   static Rc build_from_iter(size_t l, size_t r, Iter& iter) {
@@ -255,8 +259,8 @@ struct MySharedPtr {
       return Rc::make_base(fill);
     } else {
       size_t m = std::midpoint(l, r);
-      auto left = build_from_iterator(l, m, fill);
-      auto right = build_from_iterator(m, r, fill);
+      auto left = build_filled(l, m, fill);
+      auto right = build_filled(m, r, fill);
       return Rc::make_intermediate(std::move(left), std::move(right));
     }
   }
@@ -281,13 +285,14 @@ struct MySharedPtr {
     }
   }
 
-  static MySharedPtr filled(const T& fill) {
-    return MySharedPtr{std::move(build_filled(0, N, fill))};
+  static MySharedPtr filled(size_t count, const T& fill) {
+    return MySharedPtr{std::move(build_filled(0, count, fill))};
   }
 
-  template <std::input_iterator Iter>
-  static MySharedPtr from_iter(Iter first) {
-    return MySharedPtr{std::move(build_from_iter(0, N, first))};
+  template <std::forward_iterator Iter>
+  static MySharedPtr from_iter(Iter first, Iter last) {
+    return MySharedPtr{
+        std::move(build_from_iter(0, std::distance(first, last), first))};
   }
 
   template <typename... Args>

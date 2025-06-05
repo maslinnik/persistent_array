@@ -4,7 +4,7 @@
 
 namespace base {
 
-template <typename T, size_t N, int B>
+template <typename T, int B>
 struct KFold {
   static const int K = 1 << B;
 
@@ -91,14 +91,17 @@ struct KFold {
 
   Rc root;
 
+  size_t size() const { return root->size; }
+
+  static constexpr size_t MAX_SIZE = UINT32_MAX;
+
   static size_t child_size(size_t n) { return (n + K - 1) / K; }
 
   static size_t which(size_t i, size_t n) { return i / child_size(n); }
 
   template <bool IsConst>
   class BaseIterator {
-    static const size_t STACK_SIZE =
-        N == 1 ? 2 : (std::bit_width(N - 1) + 2 * B - 1) / B;
+    static const size_t STACK_SIZE = (std::bit_width(MAX_SIZE) + 2 * B - 1) / B;
     using StackType = std::inplace_vector<BaseNode*, STACK_SIZE>;
 
     StackType stack;
@@ -117,7 +120,7 @@ struct KFold {
     }
 
     BaseIterator(BaseNode* root, size_t index) : stack({root}) {
-      if (index < N) {
+      if (index < root->size) {
         go_to_kth(index);
       } else {
         stack.push_back(nullptr);
@@ -151,7 +154,7 @@ struct KFold {
       difference_type k = n;
       if (!stack.back()) {
         stack.pop_back();
-        k += N;
+        k += stack.back()->size;
       }
       while (stack.size() > 1 && !(0 <= k && k < stack.back()->size)) {
         auto parent = static_cast<IntermediateNode*>(stack[stack.size() - 2]);
@@ -205,7 +208,7 @@ struct KFold {
       }
       auto lca_index = [&](const StackType& stack, uint64_t mask) {
         if (!stack.back()) {
-          return N;
+          return stack[0]->size;
         }
         size_t result = 0;
         for (size_t i = lca_depth; i + 1 < stack.size(); ++i) {
@@ -237,11 +240,11 @@ struct KFold {
 
   BaseIterator<true> begin() const { return {root.get(), 0}; }
 
-  BaseIterator<true> end() const { return {root.get(), N}; }
+  BaseIterator<true> end() const { return {root.get(), size()}; }
 
   BaseIterator<false> mutable_begin() { return {root.get(), 0}; }
 
-  BaseIterator<false> mutable_end() { return {root.get(), N}; }
+  BaseIterator<false> mutable_end() { return {root.get(), size()}; }
 
   template <std::input_iterator Iter>
   static Rc build_from_iter(size_t l, size_t r, Iter& iter) {
@@ -262,15 +265,17 @@ struct KFold {
   }
 
   static Rc build_filled(size_t l, size_t r, const T& fill) {
-    if (l + 1 == r) {
+    if (l == r) {
+      return Rc{};
+    } else if (l + 1 == r) {
       return Rc::make_base(fill);
     } else {
       size_t size = r - l;
       std::array<Rc, K> children{};
       for (int i = 0; i < K; ++i) {
         children[i] =
-            build_from_iter(std::min(r, l + child_size(size) * i),
-                            std::min(r, l + child_size(size) * (i + 1)), fill);
+            build_filled(std::min(r, l + child_size(size) * i),
+                         std::min(r, l + child_size(size) * (i + 1)), fill);
       }
       return Rc::make_intermediate(size, std::move(children));
     }
@@ -290,13 +295,14 @@ struct KFold {
     return Rc::make_intermediate(curr->size, std::move(new_children));
   }
 
-  static KFold filled(const T& fill) {
-    return KFold{std::move(build_filled(0, N, fill))};
+  static KFold filled(size_t count, const T& fill) {
+    return KFold{std::move(build_filled(0, count, fill))};
   }
 
-  template <std::input_iterator Iter>
-  static KFold from_iter(Iter first) {
-    return KFold{std::move(build_from_iter(0, N, first))};
+  template <std::forward_iterator Iter>
+  static KFold from_iter(Iter first, Iter last) {
+    return KFold{
+        std::move(build_from_iter(0, std::distance(first, last), first))};
   }
 
   template <typename... Args>
@@ -307,10 +313,10 @@ struct KFold {
   }
 };
 
-template <typename T, size_t N>
-using FourFold = KFold<T, N, 2>;
+template <typename T>
+using FourFold = KFold<T, 2>;
 
-template <typename T, size_t N>
-using EightFold = KFold<T, N, 3>;
+template <typename T>
+using EightFold = KFold<T, 3>;
 
 }  // namespace base

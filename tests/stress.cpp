@@ -21,7 +21,7 @@ TEST(TestStress, SingleElement) {
 
   std::mt19937 rnd{};
 
-  std::vector<persistent_array<int, 1>> fast = {{0}};
+  std::vector<persistent_array<int>> fast = {{0}};
   std::vector<SlowPersistentArray<int, 1>> slow = {{{0}}};
 
   for (int i = 0; i < ITERATIONS; ++i) {
@@ -43,8 +43,8 @@ TEST(TestStress, MultipleElements) {
   std::mt19937 rnd{};
 
   std::array<int, N> initial{};
-  std::vector<persistent_array<int, N>> fast = {
-      persistent_array<int, N>{initial.begin()}};
+  std::vector<persistent_array<int>> fast = {
+      persistent_array<int>{initial.begin(), initial.end()}};
   std::vector<SlowPersistentArray<int, N>> slow = {{initial}};
 
   for (int i = 0; i < ITERATIONS; ++i) {
@@ -69,8 +69,8 @@ TEST(TestStress, ManyElements) {
   std::mt19937 rnd{};
 
   std::array<int, N> initial{};
-  std::vector<persistent_array<int, N>> fast = {
-      persistent_array<int, N>{initial.begin()}};
+  std::vector<persistent_array<int>> fast = {
+      persistent_array<int>{initial.begin(), initial.end()}};
   std::vector<SlowPersistentArray<int, N>> slow = {{initial}};
 
   for (int i = 0; i < ITERATIONS; ++i) {

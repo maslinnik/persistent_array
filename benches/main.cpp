@@ -1,15 +1,15 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include "persistent_array.h"
-#include "versions/my_shared_ptr.h"
 #include "versions/k_fold.h"
+#include "versions/my_shared_ptr.h"
 
-template <typename T, size_t N, template <typename, size_t> typename Base>
+template <typename T, size_t N, template <typename> typename Base>
 static void StoredRandomUpdates(benchmark::State& state) {
-  using pa_t = persistent_array<T, N, Base<T, N>>;
+  using pa_t = persistent_array<T, Base<T>>;
 
   std::mt19937 rnd{};
-  std::vector<pa_t> v = {pa_t{0}};
+  std::vector<pa_t> v = {pa_t(N)};
 
   for (auto _ : state) {
     int index = rnd() % v.size();
@@ -29,12 +29,12 @@ BENCHMARK(StoredRandomUpdates<int, 1000, base::MySharedPtr>);
 BENCHMARK(StoredRandomUpdates<int, 1000, base::FourFold>);
 BENCHMARK(StoredRandomUpdates<int, 1000, base::EightFold>);
 
-template <typename T, size_t N, template <typename, size_t> typename Base>
+template <typename T, size_t N, template <typename> typename Base>
 static void CumulativeRandomUpdates(benchmark::State& state) {
-  using pa_t = persistent_array<T, N, Base<T, N>>;
+  using pa_t = persistent_array<T, Base<T>>;
 
   std::mt19937 rnd{};
-  pa_t pa{0};
+  pa_t pa(N);
 
   for (auto _ : state) {
     int position = rnd() % N;
@@ -49,12 +49,12 @@ BENCHMARK(CumulativeRandomUpdates<int, 1000, base::MySharedPtr>);
 BENCHMARK(CumulativeRandomUpdates<int, 1000, base::FourFold>);
 BENCHMARK(CumulativeRandomUpdates<int, 1000, base::EightFold>);
 
-template <typename T, size_t N, template <typename, size_t> typename Base>
+template <typename T, size_t N, template <typename> typename Base>
 static void Traversal(benchmark::State& state) {
-  using pa_t = persistent_array<T, N, Base<T, N>>;
+  using pa_t = persistent_array<T, Base<T>>;
 
   std::mt19937 rnd{};
-  pa_t pa{0};
+  pa_t pa(N);
   for (int i = 0; i < 2 * N; ++i) {
     int position = rnd() % N;
     int new_val = rnd();
@@ -74,12 +74,12 @@ BENCHMARK(Traversal<int, 1000, base::MySharedPtr>);
 BENCHMARK(Traversal<int, 1000, base::FourFold>);
 BENCHMARK(Traversal<int, 1000, base::EightFold>);
 
-template <typename T, size_t N, template <typename, size_t> typename Base>
+template <typename T, size_t N, template <typename> typename Base>
 static void Indexing(benchmark::State& state) {
-  using pa_t = persistent_array<T, N, Base<T, N>>;
+  using pa_t = persistent_array<T, Base<T>>;
 
   std::mt19937 rnd{};
-  pa_t pa{0};
+  pa_t pa(N);
   for (int i = 0; i < 2 * N; ++i) {
     int position = rnd() % N;
     int new_val = rnd();
