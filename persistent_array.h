@@ -1,6 +1,8 @@
+#pragma once
+
 #include <memory>
 #include <numeric>
-#include "versions/initial_base.h"
+#include "versions/all.h"
 
 template <typename T, typename Base = base::Initial<T>>
 class persistent_array {

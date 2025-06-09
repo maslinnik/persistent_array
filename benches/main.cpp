@@ -1,8 +1,6 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include "persistent_array.h"
-#include "versions/k_fold.h"
-#include "versions/my_shared_ptr.h"
 
 template <typename T, size_t N, template <typename> typename Base>
 static void StoredRandomUpdates(benchmark::State& state) {
